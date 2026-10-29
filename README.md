@@ -24,7 +24,7 @@ This project investigates two modifications to this pipeline:
 
 The original Agentless file-level localization combines LLM and embedding results using occurrence-based voting.
 
-We replace this voting mechanism with **Reciprocal Rank Fusion (RRF)** so that the rank of a file within each retrieval source is taken into account.
+We evaluate replacing this voting mechanism with **Reciprocal Rank Fusion (RRF)** so that the rank of a file within each retrieval source is taken into account. The RRF implementation is separate, preserving `agentless/fl/combine.py` for baseline reproduction.
 
 ### 2. Evidence-Guided Patch Re-Ranking
 
@@ -145,6 +145,33 @@ Patch Validation
 Patch Selection
 ```
 
+### Comparing occurrence voting with RRF
+
+Keep the original `agentless/fl/combine.py` command and outputs unchanged for the
+baseline. To produce a separate RRF result from the same LLM and embedding
+JSONL inputs, run:
+
+```bash
+python agentless/fl/combine_rrf.py \
+    --retrieval_loc_file results/swe-bench-lite/retrievel_embedding/retrieve_locs.jsonl \
+    --model_loc_file results/swe-bench-lite/file_level/loc_outputs.jsonl \
+    --top_n <same value used by the baseline run> \
+    --output_folder results/swe-bench-lite/file_level_combined_rrf
+```
+
+`--top_n` is applied independently to both ranked input lists, so use the
+cutoff from the actual baseline run (the `3` shown in `README_swebench.md` is
+an example, not a guarantee of the cutoff used in another run). The primary
+output is `combined_locs.jsonl` with the same `found_files` structure used by
+downstream localization and evaluation. Per-file scores are written separately
+to `combined_locs_rrf_debug.jsonl`. Evaluate the RRF output with:
+
+```bash
+python evaluation/evaluate_file_localization.py \
+    --predictions results/swe-bench-lite/file_level_combined_rrf/combined_locs.jsonl \
+    --output evaluation/file_localization_rrf_results.csv
+```
+
 ---
 
 ## 📚 Dataset
@@ -154,4 +181,3 @@ Experiments are conducted using **SWE-bench Lite**.
 The benchmark contains real-world software engineering issues from open-source repositories. The reference patches associated with the benchmark are used to determine the ground-truth modified files for localization evaluation.
 
 The original Agentless repository also provides classifications and artifacts associated with SWE-bench Lite.
-

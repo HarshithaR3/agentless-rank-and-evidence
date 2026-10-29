@@ -1,0 +1,7 @@
+{
+    "output_folder": "experiments/localization/baseline_combined",
+    "output_file": "experiments/localization/baseline_combined/combined_locs.jsonl",
+    "retrieval_loc_file": "experiments/localization/embedding_output.jsonl",
+    "model_loc_file": "experiments/localization/llm_output.jsonl",
+    "top_n": 3
+}

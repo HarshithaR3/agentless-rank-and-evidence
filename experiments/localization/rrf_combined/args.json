@@ -1,0 +1,8 @@
+{
+    "output_folder": "experiments/localization/rrf_combined",
+    "output_file": "experiments/localization/rrf_combined/combined_locs.jsonl",
+    "retrieval_loc_file": "experiments/localization/embedding_output.jsonl",
+    "model_loc_file": "experiments/localization/llm_output.jsonl",
+    "top_n": 3,
+    "debug_output_file": "experiments/localization/rrf_combined/combined_locs_rrf_debug.jsonl"
+}
