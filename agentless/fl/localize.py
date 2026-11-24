@@ -2,12 +2,18 @@ import argparse
 import concurrent.futures
 import json
 import os
+import subprocess
 from threading import Lock
 
 from datasets import load_dataset
 from tqdm import tqdm
 
 from agentless.fl.FL import LLMFL
+from agentless.fl.repository_cache import (
+    get_cached_structure,
+    load_issue_cache,
+    validate_issue_cache,
+)
 from agentless.util.preprocess_data import (
     check_contains_valid_loc,
     filter_none_python,
@@ -101,6 +107,11 @@ def localize_instance(
     bug, args, swe_bench_data, start_file_locs, existing_instance_ids, write_lock=None
 ):
     instance_id = bug["instance_id"]
+    if start_file_locs is not None and not any(
+        locs["instance_id"] == instance_id for locs in start_file_locs
+    ):
+        return
+
     log_file = os.path.join(
         args.output_folder, "localization_logs", f"{instance_id}.log"
     )
@@ -115,9 +126,26 @@ def localize_instance(
         logger.info(f"Skipping existing instance_id: {bug['instance_id']}")
         return
 
-    structure = get_repo_structure(
-        instance_id, bug["repo"], bug["base_commit"], "playground"
-    )
+    cache_metadata = None
+    if args.repository_cache_dir:
+        try:
+            cache_metadata = load_issue_cache(args.repository_cache_dir, bug)
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            json.JSONDecodeError,
+            subprocess.CalledProcessError,
+        ) as exc:
+            logger.exception(
+                f"Skipping {instance_id}: repository cache is missing or invalid: {exc}"
+            )
+            return
+        structure = get_cached_structure(cache_metadata)
+    else:
+        structure = get_repo_structure(
+            instance_id, bug["repo"], bug["base_commit"], "playground"
+        )
 
     logger.info(f"================ localize {instance_id} ================")
 
@@ -163,6 +191,11 @@ def localize_instance(
                     ]
                     related_loc_trajs = locs["related_loc_traj"]
                 break
+
+        if cache_metadata is not None:
+            validate_issue_cache(
+                cache_metadata, bug, ranked_files=found_files[: args.top_n]
+            )
 
         if len(found_files) == 0:
             return
@@ -430,8 +463,47 @@ def localize_irrelevant(args):
 
 
 def localize(args):
-    swe_bench_data = load_dataset(args.dataset, split="test")
     start_file_locs = load_jsonl(args.start_file) if args.start_file else None
+
+    if start_file_locs is not None:
+        input_instance_ids = [locs["instance_id"] for locs in start_file_locs]
+        seen_instance_ids = set()
+        duplicate_instance_ids = []
+        for instance_id in input_instance_ids:
+            if (
+                instance_id in seen_instance_ids
+                and instance_id not in duplicate_instance_ids
+            ):
+                duplicate_instance_ids.append(instance_id)
+            seen_instance_ids.add(instance_id)
+
+        if duplicate_instance_ids:
+            raise ValueError(
+                "Duplicate instance_id values in start_file: "
+                + ", ".join(duplicate_instance_ids)
+            )
+
+    swe_bench_data = load_dataset(args.dataset, split="test")
+
+    if start_file_locs is not None:
+        dataset_by_instance_id = {bug["instance_id"]: bug for bug in swe_bench_data}
+        missing_instance_ids = [
+            instance_id
+            for instance_id in input_instance_ids
+            if instance_id not in dataset_by_instance_id
+        ]
+        if missing_instance_ids:
+            raise ValueError(
+                "Instance IDs from start_file are missing from dataset "
+                f"{args.dataset!r}: "
+                + ", ".join(missing_instance_ids)
+            )
+
+        swe_bench_data = [
+            dataset_by_instance_id[instance_id]
+            for instance_id in input_instance_ids
+        ]
+
     existing_instance_ids = (
         load_existing_instance_ids(args.output_file) if args.skip_existing else set()
     )
@@ -537,6 +609,12 @@ def main():
     parser.add_argument("--related_level", action="store_true")
     parser.add_argument("--fine_grain_line_level", action="store_true")
     parser.add_argument("--top_n", type=int, default=3)
+    parser.add_argument(
+        "--repository_cache_dir",
+        type=str,
+        default=None,
+        help="Use prepared repository worktrees and validate their issue-specific file cache.",
+    )
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--num_samples", type=int, default=1)
     parser.add_argument("--compress", action="store_true")
@@ -571,13 +649,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-4o-2024-05-13",
-        choices=[
-            "gpt-4o-2024-05-13",
-            "deepseek-coder",
-            "gpt-4o-mini-2024-07-18",
-            "claude-3-5-sonnet-20241022",
-        ],
+        default="gpt-4o",
     )
     parser.add_argument(
         "--backend",

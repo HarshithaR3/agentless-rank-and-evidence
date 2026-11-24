@@ -407,15 +407,22 @@ def filter_out_test_files(structure):
             filter_out_test_files(value)
 
 
+def _is_python_file_node(content):
+    """Return whether a structure dictionary is a parsed Python file node."""
+    return (
+        isinstance(content, dict)
+        and set(content) == {"classes", "functions", "text"}
+        and isinstance(content["classes"], list)
+        and isinstance(content["functions"], list)
+        and isinstance(content["text"], list)
+    )
+
+
 def filter_none_python(structure):
     for key, value in list(structure.items()):
-        if (
-            not "functions" in value.keys()
-            and not "classes" in value.keys()
-            and not "text" in value.keys()
-        ) or not len(value.keys()) == 3:
-            filter_none_python(value)
-
+        if not _is_python_file_node(value):
+            if isinstance(value, dict):
+                filter_none_python(value)
             if structure[key] == {}:
                 del structure[key]
         else:
@@ -599,12 +606,7 @@ def get_full_file_paths_and_classes_and_functions(structure, current_path=""):
     functions = []
     for name, content in structure.items():
         if isinstance(content, dict):
-            if (
-                not "functions" in content.keys()
-                and not "classes" in content.keys()
-                and not "text" in content.keys()
-            ) or not len(content.keys()) == 3:
-                # or guards against case where functions and classes are somehow part of the structure.
+            if not _is_python_file_node(content):
                 next_path = f"{current_path}/{name}" if current_path else name
                 (
                     sub_files,

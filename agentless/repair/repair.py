@@ -28,6 +28,7 @@ from agentless.util.preprocess_data import (
     transfer_arb_locs_to_locs,
 )
 from agentless.util.utils import cleanup_logger, load_jsonl, setup_logger
+from agentless.fl.repository_cache import get_cached_structure, load_issue_cache
 
 repair_relevant_file_instruction = """
 Below are some code segments, each from a relevant file. One or more of these files may contain bugs.
@@ -269,6 +270,19 @@ def construct_topn_file_context(
     return topn_content, file_loc_intervals
 
 
+def get_repair_repo_structure(instance_id, repo_name, base_commit, repository_cache_dir):
+    """Load an issue's repository structure from cache or the original loader."""
+    if repository_cache_dir:
+        issue = {
+            "instance_id": instance_id,
+            "repo": repo_name,
+            "base_commit": base_commit,
+        }
+        metadata = load_issue_cache(repository_cache_dir, issue)
+        return get_cached_structure(metadata)
+    return get_repo_structure(instance_id, repo_name, base_commit, "playground")
+
+
 def process_loc(loc, args, swe_bench_data, prev_o, write_lock=None):
     instance_id = loc["instance_id"]
 
@@ -314,8 +328,11 @@ def process_loc(loc, args, swe_bench_data, prev_o, write_lock=None):
     pred_files = loc["found_files"][: args.top_n]
     bench_data = [x for x in swe_bench_data if x["instance_id"] == instance_id][0]
     problem_statement = bench_data["problem_statement"]
-    structure = get_repo_structure(
-        instance_id, bench_data["repo"], bench_data["base_commit"], "playground"
+    structure = get_repair_repo_structure(
+        instance_id,
+        bench_data["repo"],
+        bench_data["base_commit"],
+        args.repository_cache_dir,
     )
     files, _, _ = get_full_file_paths_and_classes_and_functions(structure)
     raw_outputs, counts, all_generations, traj, prev_contents, file_names = (
@@ -732,6 +749,12 @@ def post_process_repair(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--loc_file", type=str, required=True)
+    parser.add_argument(
+        "--repository_cache_dir",
+        type=str,
+        default=None,
+        help="Load validated issue repository contents from an existing cache.",
+    )
     parser.add_argument("--top_n", type=int, default=1)
     parser.add_argument("--loc_interval", action="store_true")
     parser.add_argument("--context_window", type=int, default=10)
@@ -746,9 +769,9 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-4o-2024-05-13",
+        default="gpt-4o",
         choices=[
-            "gpt-4o-2024-05-13",
+            "gpt-4o",
             "deepseek-coder",
             "gpt-4o-mini-2024-07-18",
             "claude-3-5-sonnet-20241022",
