@@ -1,0 +1,9 @@
+{
+    "model": "gpt-4o",
+    "backend": "openai",
+    "output_folder": "results/select_regression",
+    "mock": false,
+    "dataset": "princeton-nlp/SWE-bench_Lite",
+    "regression_tests": "successful_tests_acr.jsonl",
+    "output_file": "results/select_regression/output.jsonl"
+}
