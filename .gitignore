@@ -183,6 +183,13 @@ dev/
 *.jsonl
 *.json
 
+# Track experiment results
+!experiments/**/*.jsonl
+!experiments/**/*.json
+
+# Ignore generated repository cache
+experiments/localization/repository_cache/
+
 # Jupyter Notebooks
 *.ipynb
 .DS_Store
